@@ -1,0 +1,61 @@
+---
+- name: Instalar Samba
+  ansible.builtin.apt:
+    name: samba
+    state: present
+    update_cache: yes
+
+- name: Crear grupo desarrolladores
+  ansible.builtin.group:
+    name: desarrolladores
+    state: present
+
+- name: Crear usuario devuser1 sin shell
+  ansible.builtin.user:
+    name: devuser1
+    state: present
+    shell: /usr/sbin/nologin # O /bin/false, dependiendo de la distro
+    groups: desarrolladores
+    append: yes # Asegura que se añada al grupo sin sobrescribir otros
+
+- name: Crear directorio compartido de proyectos
+  ansible.builtin.file:
+    path: /srv/samba/proyectos
+    state: directory
+    owner: devuser1 # O root, y luego cambiar permisos con chmod
+    group: desarrolladores
+    mode: '0770' # Permisos de lectura/escritura para dueño y grupo
+
+- name: Configurar Samba para el recurso compartido [Proyectos]
+  ansible.builtin.blockinfile:
+    path: /etc/samba/smb.conf
+    block: |
+      [Proyectos]
+         comment = Directorio de Proyectos InnovaSys
+         path = /srv/samba/proyectos
+         browsable = yes
+         writable = yes
+         guest ok = no
+         valid users = @desarrolladores
+         force group = desarrolladores
+         create mask = 0660
+         directory mask = 0770
+    marker: "# {mark} ANSIBLE MANAGED BLOCK FOR [Proyectos]"
+  notify: Reiniciar SMBd
+
+- name: Establecer contraseña de Samba para devuser1
+  ansible.builtin.shell: |
+    (echo "{{ samba_devuser1_password }}"; echo "{{ samba_devuser1_password }}") | smbpasswd -a devuser1 -s
+  args:
+    creates: /var/lib/samba/private/secrets.tdb # Un archivo que se crea después de establecer la contraseña
+  # Solo se ejecuta si devuser1 no tiene ya una contraseña Samba establecida
+  # Esta es la parte "Pista" que menciona el documento.
+  # Asegúrate de que `smbpasswd` esté en el PATH del usuario de Ansible o usa la ruta completa.
+  # Este paso NO debe reiniciar el servicio si la contraseña ya está establecida.
+  # Para la idempotencia de este paso, `creates` ayuda a que no se ejecute si ya existe el archivo.
+
+- name: Asegurar que SMBd esté iniciado y habilitado en el arranque
+  ansible.builtin.service:
+    name: smbd
+    state: started
+    enabled: yes

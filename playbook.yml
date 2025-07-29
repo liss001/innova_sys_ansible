@@ -1,0 +1,9 @@
+- name: Configuración del Servidor InnovaSys
+  hosts: innova_servers
+  become: true
+  vars:
+    nombre_empresa: "InnovaSys" # Variable para la página de bienvenida
+
+  roles:
+    - apache
+    - samba
